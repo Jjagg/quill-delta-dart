@@ -138,44 +138,41 @@ void main() {
     });
   });
 
-  group('$Operation', () {
+  group('$Op', () {
     test('insert factory', () {
-      final op = Operation.insert('a', const {'b': true});
-      expect(op.isInsert, isTrue);
+      final op = InsertOp.string('a', const {'b': true});
+      expect(op.type == OpType.insert, isTrue);
       expect(op.length, 1);
       expect(op.attributes, const {'b': true});
     });
 
     test('delete factory', () {
-      final op = Operation.delete(5);
-      expect(op.isDelete, isTrue);
+      final op = DeleteOp(5);
+      expect(op.type == OpType.delete, isTrue);
       expect(op.length, 5);
       expect(op.attributes, isNull);
     });
 
     test('retain factory', () {
-      final op = Operation.retain(5, const {'b': true});
-      expect(op.isRetain, isTrue);
+      final op = RetainOp(5, const {'b': true});
+      expect(op.type == OpType.retain, isTrue);
       expect(op.length, 5);
       expect(op.attributes, const {'b': true});
     });
 
     test('isPlain', () {
-      final op1 = Operation.retain(1);
-      final op2 = Operation.retain(1, {});
-      final op3 = Operation.retain(1, {'b': true});
-      expect(op1.isPlain, isTrue);
-      expect(op2.isPlain, isTrue);
-      expect(op3.isPlain, isFalse);
-      expect(op1.isNotPlain, isFalse);
-      expect(op2.isNotPlain, isFalse);
-      expect(op3.isNotPlain, isTrue);
+      final op1 = RetainOp(1);
+      final op2 = RetainOp(1, {});
+      final op3 = RetainOp(1, {'b': true});
+      expect(op1.hasAttributes, isFalse);
+      expect(op2.hasAttributes, isFalse);
+      expect(op3.hasAttributes, isTrue);
     });
 
     test('isEmpty', () {
-      final op1 = Operation.retain(0);
-      final op2 = Operation.retain(0, {});
-      final op3 = Operation.retain(1);
+      final op1 = RetainOp(0);
+      final op2 = RetainOp(0, {});
+      final op3 = RetainOp(1);
       expect(op1.isEmpty, isTrue);
       expect(op2.isEmpty, isTrue);
       expect(op3.isEmpty, isFalse);
@@ -185,52 +182,50 @@ void main() {
     });
 
     test('equality', () {
-      final op1 = Operation.insert('a');
-      final op2 = Operation.insert('b', const {'h': '1', 'b': true});
-      final op3 = Operation.insert('b', const {'h': true, 'b': '1'});
-      final op4 = Operation.insert('a');
+      final op1 = InsertOp.string('a');
+      final op2 = InsertOp.string('b', const {'h': '1', 'b': true});
+      final op3 = InsertOp.string('b', const {'h': true, 'b': '1'});
+      final op4 = InsertOp.string('a');
       expect(op1, isNot(op2));
       expect(op2, isNot(op3));
       expect(op1, op4);
     });
 
     test('hashCode', () {
-      final op1 = Operation.insert('b', const {'h': '1', 'b': true});
-      final op2 = Operation.insert('b', const {'h': '1', 'b': true});
-      final op3 = Operation.insert('b', const {'h': true, 'b': '1'});
+      final op1 = InsertOp.string('b', const {'h': '1', 'b': true});
+      final op2 = InsertOp.string('b', const {'h': '1', 'b': true});
+      final op3 = InsertOp.string('b', const {'h': true, 'b': '1'});
       expect(op2.hashCode, isNot(op3.hashCode));
       expect(op2.hashCode, op1.hashCode);
     });
 
     test('toString', () {
-      var op1 = Operation.insert(
+      var op1 = InsertOp.string(
           'Hello world!\nAnd fancy line-breaks.\n', {'b': true});
-      var op2 = Operation.retain(3, {'b': '1'});
-      var op3 = Operation.delete(3);
-      expect(
-          '$op1', 'insert⟨ Hello world!⏎And fancy line-breaks.⏎ ⟩ + {b: true}');
-      expect('$op2', 'retain⟨ 3 ⟩ + {b: 1}');
-      expect('$op3', 'delete⟨ 3 ⟩');
+      var op2 = RetainOp(3, {'b': '1'});
+      var op3 = DeleteOp(3);
+      expect('$op1',
+          'insert(Hello world!\\nAnd fancy line-breaks.\\n) + {b: true}');
+      expect('$op2', 'retain(3) + {b: 1}');
+      expect('$op3', 'delete(3)');
     });
 
     test('attributes immutable', () {
-      var op = Operation.insert('\n', {'b': true});
-      var attrs = op.attributes;
-      attrs['b'] = null;
-      expect(op.attributes, {'b': true});
+      var op = InsertOp.string('\n', {'b': true});
+      expect(() => op.attributes['b'] = null, throwsUnsupportedError);
     });
 
     test('attributes operator== simple', () {
-      var op1 = Operation.insert('\n', {'b': true});
-      var op2 = Operation.insert('\n', {'b': true});
+      var op1 = InsertOp.string('\n', {'b': true});
+      var op2 = InsertOp.string('\n', {'b': true});
       expect(op1 == op2, isTrue);
     });
 
     test('attributes operator== complex', () {
-      var op1 = Operation.insert('\n', {
+      var op1 = InsertOp.string('\n', {
         'b': {'c': 'd'}
       });
-      var op2 = Operation.insert('\n', {
+      var op2 = InsertOp.string('\n', {
         'b': {'c': 'd'}
       });
       expect(op1 == op2, isTrue);
@@ -256,7 +251,7 @@ void main() {
       final delta = Delta()
         ..insert('Hello world!', {'b': true})
         ..retain(5);
-      expect('$delta', 'insert⟨ Hello world! ⟩ + {b: true}\nretain⟨ 5 ⟩');
+      expect('$delta', 'insert(Hello world!) + {b: true}\nretain(5)');
     });
 
     group('invert', () {
@@ -336,23 +331,23 @@ void main() {
 
       test('insert + insert', () {
         final delta = Delta()..insert('abc')..insert('123');
-        expect(delta.first, Operation.insert('abc123'));
+        expect(delta.first, InsertOp.string('abc123'));
       });
 
       test('insert + delete', () {
         final delta = Delta()
           ..insert('abc')
           ..delete(3);
-        expect(delta[0], Operation.insert('abc'));
-        expect(delta[1], Operation.delete(3));
+        expect(delta[0], InsertOp.string('abc'));
+        expect(delta[1], DeleteOp(3));
       });
 
       test('insert + retain', () {
         final delta = Delta()
           ..insert('abc')
           ..retain(3);
-        expect(delta[0], Operation.insert('abc'));
-        expect(delta[1], Operation.retain(3));
+        expect(delta[0], InsertOp.string('abc'));
+        expect(delta[1], RetainOp(3));
       });
 
       // ==== delete combinations ====
@@ -361,21 +356,21 @@ void main() {
         final delta = Delta()
           ..delete(2)
           ..insert('abc');
-        expect(delta[0], Operation.insert('abc'));
-        expect(delta[1], Operation.delete(2));
+        expect(delta[0], InsertOp.string('abc'));
+        expect(delta[1], DeleteOp(2));
       });
 
       test('delete + delete', () {
         final delta = Delta()..delete(2)..delete(3);
-        expect(delta.first, Operation.delete(5));
+        expect(delta.first, DeleteOp(5));
       });
 
       test('delete + retain', () {
         final delta = Delta()
           ..delete(2)
           ..retain(3);
-        expect(delta[0], Operation.delete(2));
-        expect(delta[1], Operation.retain(3));
+        expect(delta[0], DeleteOp(2));
+        expect(delta[1], RetainOp(3));
       });
 
       // ==== retain combinations ====
@@ -384,38 +379,38 @@ void main() {
         final delta = Delta()
           ..retain(2)
           ..insert('abc');
-        expect(delta[0], Operation.retain(2));
-        expect(delta[1], Operation.insert('abc'));
+        expect(delta[0], RetainOp(2));
+        expect(delta[1], InsertOp.string('abc'));
       });
 
       test('retain + delete', () {
         final delta = Delta()
           ..retain(2)
           ..delete(3);
-        expect(delta[0], Operation.retain(2));
-        expect(delta[1], Operation.delete(3));
+        expect(delta[0], RetainOp(2));
+        expect(delta[1], DeleteOp(3));
       });
 
       test('retain + retain', () {
         final delta = Delta()..retain(2)..retain(3);
-        expect(delta.first, Operation.retain(5));
+        expect(delta.first, RetainOp(5));
       });
 
       // ==== edge scenarios ====
 
       test('consequent inserts with different attributes do not merge', () {
         final delta = Delta()..insert('abc', const {'b': true})..insert('123');
-        expect(delta.toList(), [
-          Operation.insert('abc', const {'b': true}),
-          Operation.insert('123'),
+        expect(delta.operations, [
+          InsertOp.string('abc', const {'b': true}),
+          InsertOp.string('123'),
         ]);
       });
 
       test('consequent retain with different attributes do not merge', () {
         final delta = Delta()..retain(5, const {'b': true})..retain(3);
-        expect(delta.toList(), [
-          Operation.retain(5, const {'b': true}),
-          Operation.retain(3),
+        expect(delta.operations, [
+          RetainOp(5, const {'b': true}),
+          RetainOp(3),
         ]);
       });
 
@@ -468,8 +463,8 @@ void main() {
       test('insert + retain', () {
         final a = Delta()..insert('A');
         final b = Delta()..retain(1, const {'b': true});
-        expect(a.compose(b).toList(), [
-          Operation.insert('A', const {'b': true})
+        expect(a.compose(b).operations, [
+          InsertOp.string('A', const {'b': true})
         ]);
       });
 
@@ -891,6 +886,7 @@ void main() {
       iterator.next();
       expect(iterator.peekLength(), 4);
       iterator.next();
+      expect(iterator.peekLength(), -1);
     });
 
     test('peekLength with operation split', () {
@@ -900,7 +896,7 @@ void main() {
 
     test('peekLength after EOF', () {
       iterator.skip(18);
-      expect(iterator.peekLength(), double.infinity);
+      expect(iterator.peekLength(), -1);
     });
 
     test('peek operation type', () {
@@ -915,17 +911,17 @@ void main() {
     });
 
     test('next', () {
-      expect(iterator.next(), Operation.insert('Hello', {'b': true}));
-      expect(iterator.next(), Operation.retain(3));
-      expect(iterator.next(), Operation.insert(' world', {'i': true}));
-      expect(iterator.next(), Operation.delete(4));
+      expect(iterator.next(), InsertOp.string('Hello', {'b': true}));
+      expect(iterator.next(), RetainOp(3));
+      expect(iterator.next(), InsertOp.string(' world', {'i': true}));
+      expect(iterator.next(), DeleteOp(4));
     });
 
     test('next with operation split', () {
-      expect(iterator.next(2), Operation.insert('He', {'b': true}));
-      expect(iterator.next(10), Operation.insert('llo', {'b': true}));
-      expect(iterator.next(1), Operation.retain(1));
-      expect(iterator.next(2), Operation.retain(2));
+      expect(iterator.next(2), InsertOp.string('He', {'b': true}));
+      expect(iterator.next(10), InsertOp.string('llo', {'b': true}));
+      expect(iterator.next(1), RetainOp(1));
+      expect(iterator.next(2), RetainOp(2));
     });
   });
 }
