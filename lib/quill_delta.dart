@@ -121,10 +121,11 @@ abstract class InsertOp extends Op {
 
   InsertOp._(Map<String, dynamic> attributes) : super._(attributes);
 
-  factory InsertOp.string(String text, [Map<String, dynamic> attributes]) =>
+  static InsertStringOp string(String text,
+          [Map<String, dynamic> attributes]) =>
       InsertStringOp._(text, attributes);
 
-  factory InsertOp.object(String objectType, object,
+  static InsertObjectOp object(String objectType, object,
           [Map<String, dynamic> attributes]) =>
       InsertObjectOp._(objectType, object, attributes);
 
@@ -178,19 +179,18 @@ class InsertStringOp extends InsertOp {
 
 class InsertObjectOp extends InsertOp {
   /// Type string of the object. This is the key for the insert object in JSON.
-  final String objectType;
+  final String valueType;
 
   /// Content of the insertion, might be a Map<String, dynamic> with unparsed
   /// object JSON.
-  final dynamic object;
+  final dynamic value;
 
   @override
   int get length => 1;
 
-  InsertObjectOp._(this.objectType, this.object,
+  InsertObjectOp._(this.valueType, this.value,
       [Map<String, dynamic> attributes])
-      : assert(objectType != null),
-        assert(object != null),
+      : assert(valueType != null),
         super._(attributes);
 
   @override
@@ -203,20 +203,20 @@ class InsertObjectOp extends InsertOp {
 
   @override
   Map<String, dynamic> toJson() => {
-        Op.insertKey: {objectType: jsonEncode(object)},
+        Op.insertKey: {valueType: jsonEncode(value)},
         if (_attributes != null) Op.attributesKey: attributes
       };
 
   @override
   String toString() =>
-      'insert(${object.toString()})${hasAttributes ? ' + $attributes' : ''}';
+      'insert(${value.toString()})${hasAttributes ? ' + $attributes' : ''}';
 
   @override
   bool operator ==(other) {
     if (identical(this, other)) return true;
     if (other is InsertObjectOp) {
-      return objectType == other.objectType &&
-          object == other.object &&
+      return valueType == other.valueType &&
+          value == other.value &&
           hasSameAttributes(other);
     }
     return false;
@@ -224,8 +224,8 @@ class InsertObjectOp extends InsertOp {
 
   @override
   int get hashCode => hasAttributes
-      ? hash3(_mapHashCode(_attributes), objectType.hashCode, object.hashCode)
-      : hash2(objectType.hashCode, object.hashCode);
+      ? hash3(_mapHashCode(_attributes), valueType.hashCode, value.hashCode)
+      : hash2(valueType.hashCode, value.hashCode);
 }
 
 class DeleteOp extends Op {
@@ -633,8 +633,6 @@ class Delta {
     }
   }
 
-  // TODO This API looks inconvenient to use
-
   /// Inverts this delta against [base].
   ///
   /// Returns new delta which negates effect of this delta when applied to
@@ -657,7 +655,6 @@ class Delta {
           inverted.retain(op.count, null);
           baseIndex += op.count;
         } else {
-          // TODO improve
           final length = op.length;
           final sliceDelta = base.slice(baseIndex, baseIndex + length);
           sliceDelta.operations.forEach((baseOp) {

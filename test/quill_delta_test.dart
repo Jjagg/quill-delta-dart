@@ -146,6 +146,14 @@ void main() {
       expect(op.attributes, const {'b': true});
     });
 
+    test('insert object factory', () {
+      final op = InsertOp.object('type', 'value', const {'b': true});
+      expect(op.type == OpType.insert, isTrue);
+      expect(op.length, 1);
+      expect(op.value, 'value');
+      expect(op.attributes, const {'b': true});
+    });
+
     test('delete factory', () {
       final op = DeleteOp(5);
       expect(op.type == OpType.delete, isTrue);
@@ -181,7 +189,7 @@ void main() {
       expect(op3.isNotEmpty, isTrue);
     });
 
-    test('equality', () {
+    test('insert equality', () {
       final op1 = InsertOp.string('a');
       final op2 = InsertOp.string('b', const {'h': '1', 'b': true});
       final op3 = InsertOp.string('b', const {'h': true, 'b': '1'});
@@ -191,7 +199,39 @@ void main() {
       expect(op1, op4);
     });
 
-    test('hashCode', () {
+    test('insert object equality', () {
+      final op1 = InsertOp.object('a', 'b');
+      final op2 = InsertOp.object('a', 'b');
+      final op3 = InsertOp.object('a', 'b', const {'h': true, 'b': '1'});
+      final op4 = InsertOp.object('a', 'b', const {'h': true, 'b': '1'});
+      final op5 = InsertOp.object('a', 'c');
+      final op6 = InsertOp.object('b', 'b');
+      expect(op1, op2);
+      expect(op1, isNot(op3));
+      expect(op3, op4);
+      expect(op1, isNot(op5));
+      expect(op1, isNot(op6));
+    });
+
+    test('delete equality', () {
+      final op1 = DeleteOp(1);
+      final op2 = DeleteOp(2);
+      final op3 = DeleteOp(1);
+      expect(op1, isNot(op2));
+      expect(op2, isNot(op3));
+      expect(op1, op3);
+    });
+
+    test('retain equality', () {
+      final op1 = RetainOp(1);
+      final op2 = RetainOp(2);
+      final op3 = RetainOp(1);
+      expect(op1, isNot(op2));
+      expect(op2, isNot(op3));
+      expect(op1, op3);
+    });
+
+    test('insert hashCode', () {
       final op1 = InsertOp.string('b', const {'h': '1', 'b': true});
       final op2 = InsertOp.string('b', const {'h': '1', 'b': true});
       final op3 = InsertOp.string('b', const {'h': true, 'b': '1'});
