@@ -113,6 +113,13 @@ abstract class Op {
   /// Returns `true` if [other] operation has the same attributes as this one.
   bool hasSameAttributes(Op other) =>
       _attributeEquality.equals(_attributes, other._attributes);
+
+  /// Return a copy of this [Op] with the given [attributes].
+  Op withAttributes(Map<String, dynamic> attributes) => match(
+      insert: (op) => InsertOp.string(op.text, attributes),
+      insertObject: (op) => InsertOp.object(op.valueType, op.value, attributes),
+      delete: (op) => op,
+      retain: (op) => RetainOp(op.count, attributes));
 }
 
 abstract class InsertOp extends Op {
@@ -313,13 +320,10 @@ class RetainOp extends Op {
       : count.hashCode;
 }
 
-/// Delta represents a document or a modification of a document as a sequence of
-/// insert, delete and retain operations.
-///
-/// Delta consisting of only "insert" operations is usually referred to as
-/// "document delta". When delta includes also "retain" or "delete" operations
-/// it is a "change delta".
-class Delta {
+int _mapHashCode(Map<String, dynamic> map) =>
+    hashObjects(map.entries.map((e) => hash2(e.key, e.value)));
+
+abstract class Delta {
   /// Transforms two attribute sets.
   static Map<String, dynamic> transformAttributes(
       Map<String, dynamic> a, Map<String, dynamic> b, bool priority) {
@@ -378,175 +382,23 @@ class Delta {
     return inverted;
   }
 
-  final List<Op> _operations;
-
-  int _modificationCount = 0;
-
-  Delta._(List<Op> operations)
-      : assert(operations != null),
-        _operations = operations;
+  Delta._();
 
   /// Creates new empty [Delta].
-  factory Delta() => Delta._(<Op>[]);
+  factory Delta() => DeltaImpl._(<Op>[]);
 
   /// Creates new [Delta] from [other].
-  factory Delta.from(Delta other) => Delta._(List<Op>.from(other._operations));
+  factory Delta.from(Delta other) =>
+      DeltaImpl._(List<Op>.from(other.operations));
 
   /// Creates [Delta] from JSON list of ops.
-  factory Delta.fromJson(List data) =>
-      Delta._(data.map((op) => Op.fromJson(op)).toList());
+  factory Delta.fromJson(List data) => data == null
+      ? Delta()
+      : DeltaImpl._(data.map((op) => Op.fromJson(op)).toList());
 
-  /// Creates a [Delta] by concatenating two other deltas.
+  /// Creates a [Delta] by concatenating two deltas.
   factory Delta.concat(Delta first, Delta second) =>
       Delta.from(first)..concat(second);
-
-  /// Returns list of operations in this delta.
-  List<Op> get operations => UnmodifiableListView(_operations);
-
-  /// Returns JSON-serializable version of this delta.
-  List toJson() => operations;
-
-  /// Returns `true` if this delta is empty.
-  bool get isEmpty => _operations.isEmpty;
-
-  /// Returns `true` if this delta is not empty.
-  bool get isNotEmpty => _operations.isNotEmpty;
-
-  /// Returns number of operations in this delta.
-  int get length => _operations.length;
-
-  /// Returns [Op] at specified [index] in this delta.
-  Op operator [](int index) => _operations[index];
-
-  /// Returns the first [Op] in this delta.
-  Op get first => _operations.first;
-
-  /// Returns the last [Op] in this delta.
-  Op get last => _operations.isEmpty
-      ? throw StateError('No element')
-      : _operations[_operations.length - 1];
-
-  @override
-  bool operator ==(dynamic other) {
-    if (identical(this, other)) return true;
-    if (other is! Delta) return false;
-    Delta typedOther = other;
-    final comparator = ListEquality<Op>(const DefaultEquality<Op>());
-    return comparator.equals(_operations, typedOther._operations);
-  }
-
-  @override
-  int get hashCode => hashObjects(_operations);
-
-  /// Retain [count] of characters from current position.
-  void retain(int count, [Map<String, dynamic> attributes]) {
-    assert(count >= 0);
-    if (count == 0) return; // no-op
-    push(RetainOp(count, attributes));
-  }
-
-  /// Insert [text] at current position.
-  void insert(String text, [Map<String, dynamic> attributes]) {
-    assert(text != null);
-    if (text.isEmpty) return; // no-op
-    push(InsertOp.string(text, attributes));
-  }
-
-  /// Insert [object] at current position.
-  void insertObj(String type, Object object,
-      [Map<String, dynamic> attributes]) {
-    assert(type != null);
-    assert(object != null);
-    if (type.isEmpty) return; // no-op
-    push(InsertOp.object(type, object, attributes));
-  }
-
-  /// Delete [count] characters from current position.
-  void delete(int count) {
-    assert(count >= 0);
-    if (count == 0) return;
-    push(DeleteOp(count));
-  }
-
-  /// Pushes new operation into this delta.
-  ///
-  /// Performs compaction by composing [operation] with current tail operation
-  /// of this delta, when possible. For instance, if current tail is
-  /// `insert('abc')` and pushed operation is `insert('123')` then existing
-  /// tail is replaced with `insert('abc123')` - a compound result of the two
-  /// operations.
-  void push(Op operation, {bool compact = true}) {
-    Op merged;
-
-    if (compact && _operations.isNotEmpty) {
-      merged = Op.merge(_operations.last, operation);
-    }
-
-    if (merged != null) {
-      _operations.last = merged;
-    } else {
-      if (_operations.isNotEmpty &&
-          _operations.last.isDelete &&
-          operation.isInsert) {
-        // Insertion and deletion at the same index is commutative,
-        // so we normalize by always putting insert first.
-        _operations.insert(_operations.length - 1, operation);
-      } else {
-        _operations.add(operation);
-      }
-      //_operations.add(operation);
-      _modificationCount++;
-    }
-
-    //if (lastOp.isDelete && operation.isInsert) {
-    //  index -= 1; // Always insert before deleting
-    //  final nLastOp = (index > 0) ? _operations.elementAt(index - 1) : null;
-    //  if (nLastOp == null) {
-    //    _operations.insert(0, operation);
-    //    return;
-    //  }
-  }
-
-  /// Composes next operation from [thisIter] and [otherIter].
-  ///
-  /// Returns new operation or `null` if operations from [thisIter] and
-  /// [otherIter] nullify each other. For instance, for the pair `insert('abc')`
-  /// and `delete(3)` composition result would be empty string.
-  Op _composeOp(DeltaIterator thisIter, DeltaIterator otherIter) {
-    assert(thisIter.hasNext || otherIter.hasNext);
-
-    if (otherIter.isNextInsert) return otherIter.next();
-    if (thisIter.isNextDelete) return thisIter.next();
-
-    final zipped = DeltaIterator.zipNext(thisIter, otherIter);
-
-    final thisOp = zipped.op1;
-    final otherOp = zipped.op2;
-
-    if (otherOp is RetainOp) {
-      final attributes = composeAttributes(
-        thisOp.attributes,
-        otherOp.attributes,
-        keepNull: thisOp.isRetain,
-      );
-      if (thisOp is RetainOp) {
-        return RetainOp(thisOp.length, attributes);
-      } else if (thisOp is InsertStringOp) {
-        return InsertOp.string(thisOp.text, attributes);
-      } else if (thisOp is InsertObjectOp) {
-        throw UnimplementedError();
-      } else {
-        throw StateError('Unreachable');
-      }
-    } else {
-      // otherOp == delete && thisOp in [retain, insert]
-      assert(otherOp.isDelete);
-      if (thisOp.isRetain) return otherOp;
-      assert(thisOp.isInsert);
-      // otherOp(delete) + thisOp(insert) => null
-    }
-    return null;
-  }
 
   /// Composes this delta with [other] and returns new [Delta].
   ///
@@ -564,36 +416,45 @@ class Delta {
     return result..trim();
   }
 
-  /// Transforms next operation from [otherIter] against next operation in
-  /// [thisIter].
+  /// Composes next operation from [firstIter] and [secondIter].
   ///
-  /// Returns `null` if both operations nullify each other.
-  Op _transformOp(
-      DeltaIterator thisIter, DeltaIterator otherIter, bool priority) {
-    if (thisIter.isNextInsert && (priority || !otherIter.isNextInsert)) {
-      return RetainOp(thisIter.next().length);
-    } else if (otherIter.isNextInsert) {
-      return otherIter.next();
-    }
+  /// Returns new operation or `null` if operations from [firstIter] and
+  /// [secondIter] nullify each other. For instance, for the pair `insert('abc')`
+  /// and `delete(3)` composition result would be empty string.
+  static Op _composeOp(DeltaIterator firstIter, DeltaIterator secondIter) {
+    assert(firstIter.hasNext || secondIter.hasNext);
 
-    final zipped = DeltaIterator.zipNext(thisIter, otherIter);
-    final thisOp = zipped.op1;
-    final otherOp = zipped.op2;
-    final length = zipped.length;
+    if (secondIter.isNextInsert) return secondIter.next();
+    if (firstIter.isNextDelete) return firstIter.next();
 
-    // At this point only delete and retain operations are possible.
-    if (thisOp.isDelete) {
-      // otherOp is either delete or retain, so they nullify each other.
-      return null;
-    } else if (otherOp.isDelete) {
-      return otherOp;
-    } else {
-      // Retain otherOp which is either retain or insert.
-      return RetainOp(
-        length,
-        transformAttributes(thisOp.attributes, otherOp.attributes, priority),
+    final zipped = DeltaIterator.zipNext(firstIter, secondIter);
+
+    final firstOp = zipped.op1;
+    final secondOp = zipped.op2;
+
+    if (secondOp is RetainOp) {
+      final attributes = composeAttributes(
+        firstOp.attributes,
+        secondOp.attributes,
+        keepNull: firstOp.isRetain,
       );
+      if (firstOp is RetainOp) {
+        return RetainOp(firstOp.length, attributes);
+      } else if (firstOp is InsertStringOp) {
+        return InsertOp.string(firstOp.text, attributes);
+      } else if (firstOp is InsertObjectOp) {
+        throw UnimplementedError();
+      } else {
+        throw StateError('Unreachable');
+      }
+    } else {
+      // otherOp == delete && thisOp in [retain, insert]
+      assert(secondOp.isDelete);
+      if (firstOp.isRetain) return secondOp;
+      assert(firstOp.isInsert);
+      // otherOp(delete) + thisOp(insert) => null
     }
+    return null;
   }
 
   /// Transforms [other] delta against operations in this delta.
@@ -609,27 +470,35 @@ class Delta {
     return result..trim();
   }
 
-  /// Removes trailing retain operation with empty attributes, if present.
-  void trim() {
-    if (isNotEmpty) {
-      final last = _operations.last;
-      if (last.isRetain && !last.hasAttributes) {
-        _operations.removeLast();
-        _modificationCount++;
-      }
+  /// Transforms next operation from [secondIter] against next operation in
+  /// [firstIter].
+  ///
+  /// Returns `null` if both operations nullify each other.
+  static Op _transformOp(
+      DeltaIterator firstIter, DeltaIterator secondIter, bool priority) {
+    if (firstIter.isNextInsert && (priority || !secondIter.isNextInsert)) {
+      return RetainOp(firstIter.next().length);
+    } else if (secondIter.isNextInsert) {
+      return secondIter.next();
     }
-  }
 
-  /// Concatenates [other] to this delta.
-  void concat(Delta other) {
-    if (other.isNotEmpty) {
-      // In case first operation of other can be merged with last operation in
-      // our list.
-      push(other.first);
+    final zipped = DeltaIterator.zipNext(firstIter, secondIter);
+    final firstOp = zipped.op1;
+    final secondOp = zipped.op2;
+    final length = zipped.length;
 
-      for (var op in other._operations.skip(1)) {
-        push(op, compact: false);
-      }
+    // At this point only delete and retain operations are possible.
+    if (firstOp.isDelete) {
+      // otherOp is either delete or retain, so they nullify each other.
+      return null;
+    } else if (secondOp.isDelete) {
+      return secondOp;
+    } else {
+      // Retain otherOp which is either retain or insert.
+      return RetainOp(
+        length,
+        transformAttributes(firstOp.attributes, secondOp.attributes, priority),
+      );
     }
   }
 
@@ -642,7 +511,7 @@ class Delta {
     if (base.isEmpty) return inverted;
 
     var baseIndex = 0;
-    for (final op in _operations) {
+    for (final op in operations) {
       if (op is InsertOp) {
         inverted.delete(op.length);
       } else if (op is DeleteOp) {
@@ -671,6 +540,66 @@ class Delta {
     inverted.trim();
     return inverted;
   }
+
+  /// Changes every time this delta is modified.
+  ///
+  /// Used by [DeltaIterator] to check if delta changed
+  /// (making the iterator invalid).
+  int get state;
+
+  /// Returns list of operations in this delta.
+  List<Op> get operations;
+
+  /// Returns JSON-serializable version of this delta.
+  List toJson() => operations;
+
+  /// Returns `true` if this delta is empty.
+  bool get isEmpty => operations.isEmpty;
+
+  /// Returns `true` if this delta is not empty.
+  bool get isNotEmpty => operations.isNotEmpty;
+
+  /// Returns number of operations in this delta.
+  int get length => operations.length;
+
+  /// Returns [Op] at specified [index] in this delta.
+  Op operator [](int index) => operations[index];
+
+  /// Returns the first [Op] in this delta.
+  Op get first => operations.first;
+
+  /// Returns the last [Op] in this delta.
+  Op get last => operations.isEmpty
+      ? throw StateError('No element')
+      : operations[operations.length - 1];
+
+  /// Retain [count] of characters from current position.
+  void retain(int count, [Map<String, dynamic> attributes]);
+
+  /// Insert [text] at current position.
+  void insert(String text, [Map<String, dynamic> attributes]);
+
+  /// Insert [object] at current position.
+  void insertObject(String type, Object object,
+      [Map<String, dynamic> attributes]);
+
+  /// Delete [count] characters from current position.
+  void delete(int count);
+
+  /// Pushes new operation into this delta.
+  ///
+  /// Performs compaction by composing [operation] with current tail operation
+  /// of this delta, when possible. For instance, if current tail is
+  /// `insert('abc')` and pushed operation is `insert('123')` then existing
+  /// tail is replaced with `insert('abc123')` - a compound result of the two
+  /// operations.
+  void push(Op operation, {bool compact = true});
+
+  /// Removes trailing retain operation with empty attributes, if present.
+  void trim();
+
+  /// Concatenates [other] to this delta.
+  void concat(Delta other);
 
   /// Returns slice of this delta from [start] index (inclusive) to [end]
   /// (exclusive).
@@ -717,6 +646,123 @@ class Delta {
     }
     return index;
   }
+}
+
+/// Delta represents a document or a modification of a document as a sequence of
+/// insert, delete and retain operations.
+///
+/// Delta consisting of only "insert" operations is usually referred to as
+/// "document delta". When delta includes also "retain" or "delete" operations
+/// it is a "change delta".
+class DeltaImpl extends Delta {
+  final List<Op> _operations;
+
+  int _modificationCount = 0;
+
+  DeltaImpl._(List<Op> operations)
+      : assert(operations != null),
+        _operations = operations,
+        _operationsView = UnmodifiableListView(operations),
+        super._();
+
+  final UnmodifiableListView<Op> _operationsView;
+
+  @override
+  int get state => _modificationCount;
+
+  @override
+  List<Op> get operations => _operationsView;
+
+  @override
+  bool operator ==(dynamic other) {
+    if (identical(this, other)) return true;
+    if (other is! DeltaImpl) return false;
+    DeltaImpl typedOther = other;
+    final comparator = ListEquality<Op>(const DefaultEquality<Op>());
+    return comparator.equals(_operations, typedOther._operations);
+  }
+
+  @override
+  int get hashCode => hashObjects(_operations);
+
+  @override
+  void retain(int count, [Map<String, dynamic> attributes]) {
+    assert(count >= 0);
+    if (count == 0) return; // no-op
+    push(RetainOp(count, attributes));
+  }
+
+  @override
+  void insert(String text, [Map<String, dynamic> attributes]) {
+    assert(text != null);
+    if (text.isEmpty) return; // no-op
+    push(InsertOp.string(text, attributes));
+  }
+
+  @override
+  void insertObject(String type, Object object,
+      [Map<String, dynamic> attributes]) {
+    assert(type != null);
+    if (type.isEmpty) return; // no-op
+    push(InsertOp.object(type, object, attributes));
+  }
+
+  /// Delete [count] characters from current position.
+  @override
+  void delete(int count) {
+    assert(count >= 0);
+    if (count == 0) return;
+    push(DeleteOp(count));
+  }
+
+  @override
+  void push(Op operation, {bool compact = true}) {
+    Op merged;
+
+    if (compact && _operations.isNotEmpty) {
+      merged = Op.merge(_operations.last, operation);
+    }
+
+    if (merged != null) {
+      _operations.last = merged;
+    } else {
+      if (_operations.isNotEmpty &&
+          _operations.last.isDelete &&
+          operation.isInsert) {
+        // Insertion and deletion at the same index is commutative,
+        // so we normalize by always putting insert first.
+        _operations.insert(_operations.length - 1, operation);
+      } else {
+        _operations.add(operation);
+      }
+      //_operations.add(operation);
+      _modificationCount++;
+    }
+  }
+
+  @override
+  void trim() {
+    if (isNotEmpty) {
+      final last = _operations.last;
+      if (last.isRetain && !last.hasAttributes) {
+        _operations.removeLast();
+        _modificationCount++;
+      }
+    }
+  }
+
+  @override
+  void concat(Delta other) {
+    if (other.isNotEmpty) {
+      // In case first operation of other can be merged with last operation in
+      // our list.
+      push(other.first);
+
+      for (var op in other.operations.skip(1)) {
+        push(op, compact: false);
+      }
+    }
+  }
 
   @override
   String toString() => _operations.join('\n');
@@ -736,13 +782,13 @@ class ZippedOp {
 /// Specialized iterator for [Delta]s.
 class DeltaIterator {
   final Delta delta;
-  final int _modificationCount;
+  final int _deltaState;
   int _index = 0;
 
   /// Local offset inside the current operation.
   int _offset = 0;
 
-  DeltaIterator(this.delta) : _modificationCount = delta._modificationCount;
+  DeltaIterator(this.delta) : _deltaState = delta.state;
 
   bool get isNextInsert => nextOpType == OpType.insert;
 
@@ -765,7 +811,7 @@ class DeltaIterator {
   /// Returns `-1` if there are no more operations left to iterate.
   int peekLength() {
     if (_index < delta.length) {
-      final operation = delta._operations[_index];
+      final operation = delta.operations[_index];
       return operation.length - _offset;
     }
     return -1;
@@ -781,7 +827,7 @@ class DeltaIterator {
           length, 'length', 'length should be larger than 0.');
     }
 
-    if (_modificationCount != delta._modificationCount) {
+    if (_deltaState != delta.state) {
       throw ConcurrentModificationError(delta);
     }
 
@@ -869,5 +915,116 @@ class DeltaIterator {
   }
 }
 
-int _mapHashCode(Map<String, dynamic> map) =>
-    hashObjects(map.entries.map((e) => hash2(e.key, e.value)));
+/// Wrapper around a class that implements [Delta] that only exposes `Delta`
+/// members.
+///
+/// A simple wrapper that delegates all `Delta` members to the delta provided in
+/// the constructor.
+///
+/// Base for delegating map implementations like [UnmodifiableDeltaView].
+class DeltaView implements Delta {
+  final Delta _delta;
+
+  const DeltaView(Delta delta) : _delta = delta;
+
+  @override
+  Op operator [](int index) => _delta[index];
+
+  @override
+  Delta compose(Delta other) => _delta.compose(other);
+
+  @override
+  void concat(Delta other) => _delta.concat(other);
+
+  @override
+  void delete(int count) => _delta.delete(count);
+
+  @override
+  Op get first => _delta.first;
+
+  @override
+  void insert(String text, [Map<String, dynamic> attributes]) =>
+      _delta.insert(text, attributes);
+
+  @override
+  void insertObject(String type, Object object,
+          [Map<String, dynamic> attributes]) =>
+      _delta.insertObject(type, object, attributes);
+
+  @override
+  Delta invert(Delta other) => _delta.invert(other);
+
+  @override
+  bool get isEmpty => _delta.isEmpty;
+
+  @override
+  bool get isNotEmpty => _delta.isNotEmpty;
+
+  @override
+  Op get last => _delta.last;
+
+  @override
+  int get length => _delta.length;
+
+  @override
+  List<Op> get operations => _delta.operations;
+
+  @override
+  void push(Op operation, {bool compact = true}) =>
+      _delta.push(operation, compact: compact);
+
+  @override
+  void retain(int count, [Map<String, dynamic> attributes]) =>
+      _delta.retain(count, attributes);
+
+  @override
+  Delta slice(int start, [int end]) => _delta.slice(start, end);
+
+  @override
+  int get state => _delta.state;
+
+  @override
+  List toJson() => _delta.toJson();
+
+  @override
+  Delta transform(Delta other, bool priority) =>
+      _delta.transform(other, priority);
+
+  @override
+  int transformPosition(int index, {bool force = true}) =>
+      _delta.transformPosition(index, force: force);
+
+  @override
+  void trim() => _delta.trim();
+}
+
+abstract class _UnmodifiableDeltaMixin implements Delta {
+  Error error() => UnsupportedError('Cannot modify unmodifiable delta.');
+
+  @override
+  void concat(Delta other) => throw error();
+
+  @override
+  void delete(int count) => throw error();
+
+  @override
+  void insert(String text, [Map<String, dynamic> attributes]) => throw error();
+
+  @override
+  void insertObject(String type, Object object,
+          [Map<String, dynamic> attributes]) =>
+      throw error();
+
+  @override
+  void push(Op operation, {bool compact = true}) => throw error();
+
+  @override
+  void retain(int count, [Map<String, dynamic> attributes]) => throw error();
+
+  @override
+  void trim() => throw error();
+}
+
+class UnmodifiableDeltaView extends DeltaView with _UnmodifiableDeltaMixin {
+  UnmodifiableDeltaView(Delta delta) : super(delta);
+}
