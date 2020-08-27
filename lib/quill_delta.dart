@@ -117,7 +117,7 @@ abstract class Op {
   /// Return a copy of this [Op] with the given [attributes].
   Op withAttributes(Map<String, dynamic> attributes) => match(
       insert: (op) => InsertOp.string(op.text, attributes),
-      insertObject: (op) => InsertOp.object(op.valueType, op.value, attributes),
+      insertObject: (op) => InsertOp.object(op.key, op.value, attributes),
       delete: (op) => op,
       retain: (op) => RetainOp(op.count, attributes));
 }
@@ -186,7 +186,7 @@ class InsertStringOp extends InsertOp {
 
 class InsertObjectOp extends InsertOp {
   /// Type string of the object. This is the key for the insert object in JSON.
-  final String valueType;
+  final String key;
 
   /// Content of the insertion, might be a Map<String, dynamic> with unparsed
   /// object JSON.
@@ -195,9 +195,8 @@ class InsertObjectOp extends InsertOp {
   @override
   int get length => 1;
 
-  InsertObjectOp._(this.valueType, this.value,
-      [Map<String, dynamic> attributes])
-      : assert(valueType != null),
+  InsertObjectOp._(this.key, this.value, [Map<String, dynamic> attributes])
+      : assert(key != null),
         super._(attributes);
 
   @override
@@ -210,19 +209,19 @@ class InsertObjectOp extends InsertOp {
 
   @override
   Map<String, dynamic> toJson() => {
-        Op.insertKey: {valueType: jsonEncode(value)},
+        Op.insertKey: {key: jsonEncode(value)},
         if (_attributes != null) Op.attributesKey: attributes
       };
 
   @override
   String toString() =>
-      'insert(${value.toString()})${hasAttributes ? ' + $attributes' : ''}';
+      'insert($key: ${value.toString()})${hasAttributes ? ' + $attributes' : ''}';
 
   @override
   bool operator ==(other) {
     if (identical(this, other)) return true;
     if (other is InsertObjectOp) {
-      return valueType == other.valueType &&
+      return key == other.key &&
           value == other.value &&
           hasSameAttributes(other);
     }
@@ -231,8 +230,8 @@ class InsertObjectOp extends InsertOp {
 
   @override
   int get hashCode => hasAttributes
-      ? hash3(_mapHashCode(_attributes), valueType.hashCode, value.hashCode)
-      : hash2(valueType.hashCode, value.hashCode);
+      ? hash3(_mapHashCode(_attributes), key.hashCode, value.hashCode)
+      : hash2(key.hashCode, value.hashCode);
 }
 
 class DeleteOp extends Op {
@@ -443,7 +442,7 @@ abstract class Delta {
       } else if (firstOp is InsertStringOp) {
         return InsertOp.string(firstOp.text, attributes);
       } else if (firstOp is InsertObjectOp) {
-        throw UnimplementedError();
+        return InsertOp.object(firstOp.key, firstOp.value, attributes);
       } else {
         throw StateError('Unreachable');
       }
