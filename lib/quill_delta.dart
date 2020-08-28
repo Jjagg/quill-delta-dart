@@ -42,6 +42,8 @@ abstract class Op {
       T Function(DeleteOp) delete,
       T Function(RetainOp) retain});
 
+  // TODO Op.attributes should never be null, instead it should be empty
+
   Op._(Map<String, dynamic> attributes)
       : _attributes =
             attributes == null ? null : Map<String, dynamic>.of(attributes);
@@ -162,7 +164,8 @@ class InsertStringOp extends InsertOp {
   @override
   Map<String, dynamic> toJson() => {
         Op.insertKey: text,
-        if (_attributes != null) Op.attributesKey: attributes
+        if (_attributes != null && _attributes.isNotEmpty)
+          Op.attributesKey: attributes
       };
 
   @override
@@ -816,7 +819,7 @@ class DeltaIterator {
     return -1;
   }
 
-  /// Consumes and returns next operation or null if we're at the end of th delta.
+  /// Consumes and returns next operation or null if we're at the end of the delta.
   ///
   /// Optional [length] specifies maximum length of operation to return. Note
   /// that actual length of returned operation may be less than specified value.
