@@ -26,6 +26,9 @@ abstract class Op {
   bool get isInsert => type == OpType.insert;
   bool get isDelete => type == OpType.delete;
   bool get isRetain => type == OpType.retain;
+  bool isObject([String type]) =>
+      this is InsertObjectOp &&
+      (type == null || (this as InsertObjectOp).key == type);
 
   int get length;
   bool get isEmpty => length == 0;
@@ -95,6 +98,8 @@ abstract class Op {
       this is InsertStringOp ? map((this as InsertStringOp).text) : els;
   int indexOf(String s, [int start = 0]) =>
       mapTextOrElse((t) => t.indexOf(s, start), -1);
+  int lastIndexOf(String s, [int start = 0]) =>
+      mapTextOrElse((t) => t.lastIndexOf(s, start), -1);
   bool startsWith(String s) => mapTextOrElse((t) => t.startsWith(s), false);
   bool endsWith(String s) => mapTextOrElse((t) => t.endsWith(s), false);
   bool contains(String s) => mapTextOrElse((t) => t.contains(s), false);
@@ -212,7 +217,7 @@ class InsertObjectOp extends InsertOp {
 
   @override
   Map<String, dynamic> toJson() => {
-        Op.insertKey: {key: jsonEncode(value)},
+        Op.insertKey: {key: value.toJson()},
         if (_attributes != null) Op.attributesKey: attributes
       };
 
